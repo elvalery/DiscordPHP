@@ -991,8 +991,66 @@ class Channel extends Part
 
         return $deferred->promise();
     }
-
-    /**
+  
+  
+  /**
+   * Sends a file to the channel if it is a text channel.
+   *
+   * @param string      $filepath The link to the file to be sent.
+   * @param string|null $filename The name to send the file as.
+   * @param string|null $content  Message content to send with the file.
+   * @param bool        $tts      Whether to send the message with TTS.
+   *
+   * @return ExtendedPromiseInterface
+   */
+  public function sendRemoteFile(string $filelink, string $filename, ?string $content = null, bool $tts = false): ExtendedPromiseInterface
+  {
+    $deferred = new Deferred();
+    
+    if (! $this->allowText()) {
+      $deferred->reject(new \Exception('You cannot send a file to a voice channel.'));
+      
+      return $deferred->promise();
+    }
+    
+    if (! $this->is_private) {
+      $botperms = $this->guild->members->offsetGet($this->discord->id)->getPermissions($this);
+      
+      if (! $botperms->attach_files) {
+        $deferred->reject(new NoPermissionsException('You do not have permission to send files into the specified channel.'));
+        
+        return $deferred->promise();
+      }
+    }
+    
+    $multipart = new Multipart([
+      [
+        'name' => 'file',
+        'content' => file_get_contents($filelink),
+        'filename' => $filename,
+      ],
+      [
+        'name' => 'tts',
+        'content' => $tts ? 'true' : 'false',
+      ],
+      [
+        'name' => 'content',
+        'content' => $content ?? '',
+      ],
+    ]);
+    
+    $this->http->post("channels/{$this->id}/messages", (string) $multipart, $multipart->getHeaders())->done(function ($response) use ($deferred) {
+      $message = $this->factory->create(Message::class, $response, true);
+      $this->messages->push($message);
+      
+      $deferred->resolve($message);
+    }, [$deferred, 'reject']);
+    
+    return $deferred->promise();
+  }
+  
+  
+  /**
      * Broadcasts that you are typing to the channel. Lasts for 5 seconds.
      *
      * @return ExtendedPromiseInterface
